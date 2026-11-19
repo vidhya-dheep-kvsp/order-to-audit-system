@@ -14,7 +14,12 @@ templates = Jinja2Templates(directory="app/templates")
 def home(user: User | None = Depends(get_current_user)):
     if not user:
         return RedirectResponse("/login", status_code=303)
-    # Route each role to their primary workspace
+    if user.role == "salesman":
+        return RedirectResponse("/sales/mobile", status_code=303)
+    if user.role == "production":
+        return RedirectResponse("/production", status_code=303)
+    if user.role == "admin":
+        return RedirectResponse("/sales/admin", status_code=303)
     return RedirectResponse("/masters", status_code=303)
 
 

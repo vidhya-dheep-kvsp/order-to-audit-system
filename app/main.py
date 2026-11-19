@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from app.database import engine, Base, SessionLocal
 from app.seed import seed_database
-from app.routers import auth, masters, production
+from app.routers import auth, masters, production, sales
 
 
 @asynccontextmanager
@@ -23,3 +23,4 @@ app.add_middleware(SessionMiddleware, secret_key="dev-secret-key-change-in-prod"
 app.include_router(auth.router)
 app.include_router(masters.router)
 app.include_router(production.router)
+app.include_router(sales.router)

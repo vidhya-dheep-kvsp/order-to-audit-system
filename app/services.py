@@ -2,10 +2,12 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
 from app.models import (
     Item, StockLedger, Purchase, BOMHeader,
-    ProductionRun, ProductionConsumption, AuditLog
+    ProductionRun, ProductionConsumption, AuditLog,
+    Order, OrderItem, Invoice, Payment
 )
 
 VARIANCE_TOLERANCE_PCT = Decimal("3.00")
+FACTORY_STATE = "Tamil Nadu"
 
 
 def round2(val: Decimal) -> Decimal:
@@ -219,3 +221,136 @@ def update_run_overheads(
     )
     db.commit()
     return run
+
+
+def create_sales_order(
+    db: Session,
+    customer_id: int,
+    salesman_id: int,
+    item_id: int,
+    qty: Decimal,
+    notes: str = "",
+) -> Order:
+    item = db.query(Item).filter(Item.id == item_id).first()
+    order = Order(
+        customer_id=customer_id,
+        salesman_id=salesman_id,
+        status="SUBMITTED",
+        notes=notes.strip() or None,
+    )
+    db.add(order)
+    db.flush()
+
+    db.add(OrderItem(
+        order_id=order.id,
+        item_id=item.id,
+        qty=qty,
+        unit_price=item.selling_price,
+    ))
+    log_audit(db, salesman_id, "CREATE_ORDER", "ORDER", order.id, f"Ordered {qty} x {item.name}")
+    db.commit()
+    return order
+
+
+def approve_and_invoice_order(db: Session, order_id: int, user_id: int) -> Invoice:
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order.status != "SUBMITTED":
+        raise ValueError("Only SUBMITTED orders can be invoiced.")
+
+    # Verify finished goods stock availability before invoicing
+    for line in order.items:
+        avail = get_current_stock(db, line.item_id)
+        if avail < line.qty:
+            raise ValueError(f"Insufficient stock for {line.item.name}: available {avail}, ordered {line.qty}")
+
+    taxable_value = Decimal("0.00")
+    total_tax = Decimal("0.00")
+    for line in order.items:
+        line_val = round2(line.qty * line.unit_price)
+        taxable_value += line_val
+        total_tax += round2(line_val * (line.item.gst_rate / Decimal("100")))
+
+    is_intra_state = order.customer.state.strip().lower() == FACTORY_STATE.lower()
+    if is_intra_state:
+        cgst = round2(total_tax / Decimal("2"))
+        sgst = round2(total_tax - cgst)
+        igst = Decimal("0.00")
+    else:
+        cgst = Decimal("0.00")
+        sgst = Decimal("0.00")
+        igst = round2(total_tax)
+
+    grand_total = round2(taxable_value + cgst + sgst + igst)
+    inv_count = db.query(Invoice).count() + 1
+    inv_number = f"INV-2026-{inv_count:04d}"
+
+    invoice = Invoice(
+        invoice_number=inv_number,
+        order_id=order.id,
+        customer_id=order.customer_id,
+        taxable_value=taxable_value,
+        cgst=cgst,
+        sgst=sgst,
+        igst=igst,
+        total_amount=grand_total,
+        created_by=user_id,
+    )
+    db.add(invoice)
+    order.status = "INVOICED"
+    db.flush()
+
+    log_audit(db, user_id, "GENERATE_INVOICE", "INVOICE", invoice.id, f"{inv_number} for Order #{order.id}, Total Rs.{grand_total}")
+    db.commit()
+    return invoice
+
+
+def dispatch_invoice(db: Session, invoice_id: int, user_id: int) -> Invoice:
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if invoice.is_dispatched:
+        raise ValueError("Invoice already dispatched.")
+
+    for line in invoice.order.items:
+        avail = get_current_stock(db, line.item_id)
+        if avail < line.qty:
+            raise ValueError(f"Insufficient stock to dispatch {line.item.name}: available {avail}, needed {line.qty}")
+
+        record_stock_movement(
+            db=db,
+            item_id=line.item_id,
+            movement_type="SALES_DISPATCH",
+            qty_change=-line.qty,
+            unit_cost=line.item.current_rate,
+            source_type="INVOICE",
+            source_id=invoice.id,
+            notes=f"Dispatched {invoice.invoice_number} to {invoice.customer.name}",
+        )
+
+    invoice.is_dispatched = True
+    invoice.order.status = "DISPATCHED"
+    log_audit(db, user_id, "DISPATCH_INVOICE", "INVOICE", invoice.id, f"Dispatched {invoice.invoice_number}")
+    db.commit()
+    return invoice
+
+
+def record_payment(
+    db: Session,
+    invoice_id: int,
+    amount: Decimal,
+    payment_mode: str,
+    reference_no: str,
+    user_id: int,
+) -> Payment:
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    payment = Payment(
+        invoice_id=invoice.id,
+        customer_id=invoice.customer_id,
+        amount=round2(amount),
+        payment_mode=payment_mode,
+        reference_no=reference_no.strip() or None,
+        recorded_by=user_id,
+    )
+    db.add(payment)
+    db.flush()
+    log_audit(db, user_id, "RECORD_PAYMENT", "PAYMENT", payment.id, f"Rs.{amount} against {invoice.invoice_number}")
+    db.commit()
+    return payment

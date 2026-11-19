@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Production Floor, Purchases & BOM Costing</h1>
+
+<div class="grid lg:grid-cols-3 gap-6 mb-8">
+    <!-- 1. Record Raw Material Purchase -->
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="font-semibold text-lg mb-3">1. Record Purchase</h2>
+        <form method="post" action="/production/purchase" class="space-y-3 text-sm">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Supplier</label>
+                <select name="supplier_id" class="w-full border rounded px-2.5 py-2">
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Raw / Packaging Item</label>
+                <select name="item_id" class="w-full border rounded px-2.5 py-2">
+                    {% for item in raw_items %}
+                    <option value="{{ item.id }}">{{ item.name }} (Stock: {{ stock_map[item.id] }} {{ item.base_unit }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                    <input type="number" step="0.001" name="qty" required placeholder="e.g. 60" class="w-full border rounded px-2.5 py-2">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Rate (₹ / unit)</label>
+                    <input type="number" step="0.01" name="unit_rate" required placeholder="e.g. 45" class="w-full border rounded px-2.5 py-2">
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-slate-900 text-white py-2 rounded-lg font-medium hover:bg-slate-800">
+                Save Purchase & Update Ledger
+            </button>
+        </form>
+    </div>
+
+    <!-- 2. Log Production Run (BOM-driven) -->
+    <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="font-semibold text-lg mb-3">2. Log Production Run (BOM Consumption & Output)</h2>
+        {% if boms %}
+        {% set bom = boms[0] %}
+        <form method="post" action="/production/run" class="space-y-4 text-sm">
+            <input type="hidden" name="bom_id" value="{{ bom.id }}">
+            <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border">
+                <div>
+                    <span class="text-xs text-slate-500">Product</span>
+                    <div class="font-bold">{{ bom.finished_item.name }}</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Batches</label>
+                    <input type="number" step="0.5" name="batch_count" value="1" required class="w-full border rounded px-2 py-1 mt-0.5">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600">Actual Good Packets (Exp: {{ bom.expected_yield }})</label>
+                    <input type="number" step="1" name="actual_output" required placeholder="e.g. 188" class="w-full border rounded px-2 py-1 mt-0.5">
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left border">
+                    <thead class="bg-slate-100 text-slate-600 uppercase">
+                        <tr>
+                            <th class="px-3 py-2">Component</th>
+                            <th class="px-3 py-2">BOM Std</th>
+                            <th class="px-3 py-2">Actual Used</th>
+                            <th class="px-3 py-2">Damaged / Scrap</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        {% for line in bom.lines %}
+                        <tr>
+                            <td class="px-3 py-2 font-medium">{{ line.component_item.name }} ({{ line.unit }})</td>
+                            <td class="px-3 py-2 text-slate-500">{{ line.standard_qty }}</td>
+                            <td class="px-3 py-2">
+                                <input type="number" step="0.001" name="actual_{{ line.component_item_id }}" value="{{ line.standard_qty }}" required class="w-24 border rounded px-2 py-1">
+                            </td>
+                            <td class="px-3 py-2">
+                                <input type="number" step="0.001" name="damaged_{{ line.component_item_id }}" value="0" class="w-24 border rounded px-2 py-1">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Labour Cost (₹) — Optional now</label>
+                    <input type="number" step="0.01" name="labour_cost" value="0" class="w-full border rounded px-2.5 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Gas / Power Overhead (₹) — Optional now</label>
+                    <input type="number" step="0.01" name="overhead_cost" value="0" class="w-full border rounded px-2.5 py-1.5">
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-amber-600 text-white py-2.5 rounded-lg font-semibold hover:bg-amber-700">
+                Save Production Run (Deduct Raw & Add Finished Stock)
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 3. Production Runs History, Variances & Costing -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+    <h2 class="font-semibold text-lg mb-4">Production Runs, Variance Alerts (>3%) & Cost per Packet</h2>
+    {% if not runs %}
+    <p class="text-sm text-slate-500">No production runs logged yet.</p>
+    {% endif %}
+
+    {% for run in runs %}
+    <div class="border rounded-lg p-4 mb-4 bg-slate-50">
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+            <div>
+                <span class="font-bold text-slate-900">Run #{{ run.id }} — {{ run.bom.finished_item.name }}</span>
+                <span class="text-xs text-slate-500 ml-2">({{ run.run_date.strftime('%Y-%m-%d %H:%M') }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs font-semibold">
+                <span class="px-2.5 py-1 rounded {{ 'bg-red-100 text-red-700' if run.yield_flagged else 'bg-green-100 text-green-700' }}">
+                    Yield: {{ run.actual_output }} / {{ run.expected_output }} ({{ run.yield_variance_pct }}%)
+                    {% if run.yield_flagged %}⚠ FLAGGED{% endif %}
+                </span>
+                <span class="px-2.5 py-1 rounded bg-blue-100 text-blue-800">
+                    Cost/Packet: ₹{{ run.cost_per_packet }} (Selling: ₹{{ run.bom.finished_item.selling_price }})
+                </span>
+            </div>
+        </div>
+
+        <table class="w-full text-xs text-left bg-white border mb-3">
+            <thead class="bg-slate-100 text-slate-600">
+                <tr>
+                    <th class="px-3 py-1.5">Item</th>
+                    <th class="px-3 py-1.5 text-right">Planned</th>
+                    <th class="px-3 py-1.5 text-right">Used</th>
+                    <th class="px-3 py-1.5 text-right">Damaged</th>
+                    <th class="px-3 py-1.5 text-right">Variance %</th>
+                    <th class="px-3 py-1.5 text-right">Rate (₹)</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for c in run.consumptions %}
+                <tr>
+                    <td class="px-3 py-1.5 font-medium">{{ c.item.name }}</td>
+                    <td class="px-3 py-1.5 text-right">{{ c.planned_qty }}</td>
+                    <td class="px-3 py-1.5 text-right">{{ c.actual_qty }}</td>
+                    <td class="px-3 py-1.5 text-right">{{ c.damaged_qty }}</td>
+                    <td class="px-3 py-1.5 text-right font-semibold {{ 'text-red-600' if c.is_flagged else 'text-slate-700' }}">
+                        {{ c.variance_pct }}% {% if c.is_flagged %}⚠{% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-right">{{ c.unit_cost }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Update Overheads Form (Benchmark Step 8) -->
+        <form method="post" action="/production/run/{{ run.id }}/overheads" class="flex flex-wrap items-end gap-3 text-xs bg-white p-3 rounded border">
+            <div>
+                <span class="text-slate-500">Material Cost:</span>
+                <strong class="ml-1">₹{{ run.material_cost }}</strong>
+            </div>
+            <div>
+                <label class="block text-slate-500">Labour (₹)</label>
+                <input type="number" step="0.01" name="labour_cost" value="{{ run.labour_cost }}" class="w-24 border rounded px-2 py-1">
+            </div>
+            <div>
+                <label class="block text-slate-500">Gas/Power (₹)</label>
+                <input type="number" step="0.01" name="overhead_cost" value="{{ run.overhead_cost }}" class="w-24 border rounded px-2 py-1">
+            </div>
+            <button type="submit" class="bg-slate-800 text-white px-3 py-1.5 rounded font-medium hover:bg-slate-700">
+                Update Overheads & Recalculate Cost
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

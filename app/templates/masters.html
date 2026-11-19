@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Master Data & Live Ledger Stock</h1>
+
+<!-- 1. Items & Current Stock -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
+    <div class="px-5 py-3 border-b bg-slate-50 font-semibold">Inventory Items (Derived from Stock Ledger)</div>
+    <table class="w-full text-sm text-left">
+        <thead class="bg-slate-100 text-slate-600 uppercase text-xs">
+            <tr>
+                <th class="px-4 py-2">Item</th>
+                <th class="px-4 py-2">Category</th>
+                <th class="px-4 py-2">Unit</th>
+                <th class="px-4 py-2 text-right">Current Stock</th>
+                <th class="px-4 py-2 text-right">Cost Rate (₹)</th>
+                <th class="px-4 py-2 text-right">Selling Price (₹)</th>
+                <th class="px-4 py-2 text-right">GST %</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for item in items %}
+            <tr>
+                <td class="px-4 py-2.5 font-medium">{{ item.name }}</td>
+                <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs bg-slate-100">{{ item.category }}</span></td>
+                <td class="px-4 py-2.5">{{ item.base_unit }}</td>
+                <td class="px-4 py-2.5 text-right font-bold text-slate-900">{{ stock_map[item.id] }}</td>
+                <td class="px-4 py-2.5 text-right">{{ item.current_rate }}</td>
+                <td class="px-4 py-2.5 text-right">{{ item.selling_price }}</td>
+                <td class="px-4 py-2.5 text-right">{{ item.gst_rate }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 2. Bill of Materials (BOM) -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 p-5">
+    <h2 class="font-semibold mb-3">Bill of Materials (Recipes)</h2>
+    {% for bom in boms %}
+    <div class="border rounded-lg p-4 mb-3 bg-slate-50">
+        <div class="font-bold text-slate-900 mb-2">
+            {{ bom.finished_item.name }} — Expected Yield: {{ bom.expected_yield }} {{ bom.finished_item.base_unit }}s / batch
+        </div>
+        <ul class="text-sm space-y-1">
+            {% for line in bom.lines %}
+            <li>• {{ line.component_item.name }}: <strong>{{ line.standard_qty }} {{ line.unit }}</strong></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 3. Customers & Suppliers -->
+<div class="grid md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <h2 class="font-semibold mb-3">Customers</h2>
+        <ul class="divide-y text-sm mb-4">
+            {% for c in customers %}
+            <li class="py-2 flex justify-between">
+                <span><strong>{{ c.name }}</strong> ({{ c.customer_type }})</span>
+                <span class="text-slate-500">{{ c.state }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+
+        {% if user.role == 'admin' %}
+        <form method="post" action="/masters/customers" class="border-t pt-3 space-y-2 text-sm">
+            <p class="font-medium text-slate-700">Add Customer</p>
+            <input name="name" placeholder="Customer Name" required class="w-full border rounded px-2.5 py-1.5">
+            <div class="grid grid-cols-2 gap-2">
+                <select name="customer_type" class="border rounded px-2 py-1.5">
+                    <option value="retailer">Retailer</option>
+                    <option value="distributor">Distributor</option>
+                </select>
+                <input name="state" placeholder="State (e.g. Tamil Nadu)" required class="border rounded px-2.5 py-1.5">
+            </div>
+            <input name="gstin" placeholder="GSTIN (optional)" class="w-full border rounded px-2.5 py-1.5">
+            <button type="submit" class="bg-slate-900 text-white px-3 py-1.5 rounded text-xs font-medium">Add Customer</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <h2 class="font-semibold mb-3">Suppliers</h2>
+        <ul class="divide-y text-sm">
+            {% for s in suppliers %}
+            <li class="py-2 flex justify-between">
+                <span><strong>{{ s.name }}</strong></span>
+                <span class="text-slate-500">{{ s.state }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

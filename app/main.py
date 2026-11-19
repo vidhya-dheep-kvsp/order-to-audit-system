@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
 from app.database import engine, Base, SessionLocal
 from app.seed import seed_database
+from app.routers import auth, masters
 
 
 @asynccontextmanager
@@ -16,8 +18,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Order-to-Audit System", lifespan=lifespan)
+app.add_middleware(SessionMiddleware, secret_key="dev-secret-key-change-in-prod")
 
-
-@app.get("/")
-def health_check():
-    return {"status": "ok", "message": "Order-to-Audit System is running with seeded DB"}
+app.include_router(auth.router)
+app.include_router(masters.router)

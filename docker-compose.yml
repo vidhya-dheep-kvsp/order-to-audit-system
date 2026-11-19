@@ -1,0 +1,37 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: ota_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: order_to_audit
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppassword
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "appuser", "-papppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  web:
+    build: .
+    container_name: ota_fastapi
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://appuser:apppassword@db:3306/order_to_audit
+    volumes:
+      - ./app:/code/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

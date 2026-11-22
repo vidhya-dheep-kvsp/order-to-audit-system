@@ -29,6 +29,7 @@ services:
       DATABASE_URL: mysql+pymysql://appuser:apppassword@db:3306/order_to_audit
     volumes:
       - ./app:/code/app
+      - ./tests:/code/tests
     depends_on:
       db:
         condition: service_healthy

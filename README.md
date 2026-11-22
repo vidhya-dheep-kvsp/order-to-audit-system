@@ -19,7 +19,7 @@ A containerized, relational B2B Manufacturing ERP built with **FastAPI**, **MySQ
 
 ### 1. Boot the Application
 ```bash
-git clone [https://github.com/vidhya-dheep-kvsp/order-to-audit-system.git](https://github.com/vidhya-dheep-kvsp/order-to-audit-system.git)
+git clone https://github.com/vidhya-dheep-kvsp/order-to-audit-system.git
 cd order-to-audit-system
 docker compose up --build
 ```

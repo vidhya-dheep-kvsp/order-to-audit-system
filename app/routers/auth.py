@@ -20,6 +20,8 @@ def home(user: User | None = Depends(get_current_user)):
         return RedirectResponse("/production", status_code=303)
     if user.role == "admin":
         return RedirectResponse("/sales/admin", status_code=303)
+    if user.role in ("owner", "auditor"):
+        return RedirectResponse("/reports", status_code=303)
     return RedirectResponse("/masters", status_code=303)
 
 

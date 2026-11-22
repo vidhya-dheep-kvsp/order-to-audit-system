@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-bold">Owner Dashboard & Auditor Reports</h1>
+        <p class="text-sm text-slate-500">Read-only financial registers, variance alerts, and full stock ledger traceability</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/reports/export/excel" class="bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-800 shadow-sm">
+            Export Full Audit Excel (.xlsx)
+        </a>
+        <a href="/reports/export/ledger-csv" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 shadow-sm">
+            Export Stock Ledger (.csv)
+        </a>
+    </div>
+</div>
+
+<!-- 1. Owner KPI Cards -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="text-xs text-slate-500 uppercase font-semibold">Total Sales</div>
+        <div class="text-xl font-bold text-slate-900 mt-1">₹{{ kpis.total_sales }}</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="text-xs text-slate-500 uppercase font-semibold">GST Collected</div>
+        <div class="text-xl font-bold text-blue-700 mt-1">₹{{ kpis.total_tax }}</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="text-xs text-slate-500 uppercase font-semibold">Receivables Due</div>
+        <div class="text-xl font-bold {{ 'text-red-600' if kpis.total_outstanding > 0 else 'text-emerald-700' }} mt-1">₹{{ kpis.total_outstanding }}</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="text-xs text-slate-500 uppercase font-semibold">Total Purchases</div>
+        <div class="text-xl font-bold text-slate-900 mt-1">₹{{ kpis.total_purchases }}</div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="text-xs text-slate-500 uppercase font-semibold">Variance Flags (>3%)</div>
+        <div class="text-xl font-bold {{ 'text-red-600' if kpis.flagged_count > 0 else 'text-emerald-700' }} mt-1">{{ kpis.flagged_count }}</div>
+    </div>
+</div>
+
+<!-- Low Stock Alerts (Stretch Goal) -->
+{% if low_stock_items %}
+<div class="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-6 text-sm text-amber-900">
+    <strong class="block mb-1">⚠ Low Stock Reorder Alerts:</strong>
+    <div class="flex flex-wrap gap-2">
+        {% for item in low_stock_items %}
+        <span class="bg-white border border-amber-300 px-2.5 py-1 rounded text-xs font-semibold">
+            {{ item.name }}: {{ stock_map[item.id] }} {{ item.base_unit }} (Reorder &le; {{ item.reorder_level }})
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 2. Sales & GST Register -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
+    <div class="px-5 py-3 border-b bg-slate-50 font-semibold">Sales, GST & Receivables Register</div>
+    <table class="w-full text-xs text-left">
+        <thead class="bg-slate-100 text-slate-600 uppercase">
+            <tr>
+                <th class="px-4 py-2">Invoice</th>
+                <th class="px-4 py-2">Customer (State)</th>
+                <th class="px-4 py-2 text-right">Taxable</th>
+                <th class="px-4 py-2 text-right">CGST</th>
+                <th class="px-4 py-2 text-right">SGST</th>
+                <th class="px-4 py-2 text-right">IGST</th>
+                <th class="px-4 py-2 text-right">Total</th>
+                <th class="px-4 py-2 text-right">Paid</th>
+                <th class="px-4 py-2 text-right">Due</th>
+                <th class="px-4 py-2 text-center">PDF</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for inv in invoices %}
+            {% set stat = invoice_stats[inv.id] %}
+            <tr>
+                <td class="px-4 py-2 font-bold">{{ inv.invoice_number }}</td>
+                <td class="px-4 py-2">{{ inv.customer.name }} ({{ inv.customer.state }})</td>
+                <td class="px-4 py-2 text-right">₹{{ inv.taxable_value }}</td>
+                <td class="px-4 py-2 text-right">₹{{ inv.cgst }}</td>
+                <td class="px-4 py-2 text-right">₹{{ inv.sgst }}</td>
+                <td class="px-4 py-2 text-right">₹{{ inv.igst }}</td>
+                <td class="px-4 py-2 text-right font-semibold">₹{{ inv.total_amount }}</td>
+                <td class="px-4 py-2 text-right text-emerald-700">₹{{ stat.paid }}</td>
+                <td class="px-4 py-2 text-right font-semibold {{ 'text-red-600' if stat.outstanding > 0 else 'text-slate-500' }}">₹{{ stat.outstanding }}</td>
+                <td class="px-4 py-2 text-center">
+                    <a href="/sales/invoice/{{ inv.id }}/pdf" target="_blank" class="text-blue-600 hover:underline font-medium">PDF</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="px-4 py-4 text-center text-slate-400">No invoices yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 3. Production Costing & Variance Report -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
+    <div class="px-5 py-3 border-b bg-slate-50 font-semibold">Production Runs, Costing & Yield Variances</div>
+    <table class="w-full text-xs text-left">
+        <thead class="bg-slate-100 text-slate-600 uppercase">
+            <tr>
+                <th class="px-4 py-2">Run #</th>
+                <th class="px-4 py-2">Product</th>
+                <th class="px-4 py-2 text-right">Output (Act / Exp)</th>
+                <th class="px-4 py-2 text-right">Yield Var %</th>
+                <th class="px-4 py-2 text-right">Material (₹)</th>
+                <th class="px-4 py-2 text-right">Labour (₹)</th>
+                <th class="px-4 py-2 text-right">Overhead (₹)</th>
+                <th class="px-4 py-2 text-right">Cost / Packet</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for r in runs %}
+            <tr>
+                <td class="px-4 py-2 font-bold">#{{ r.id }}</td>
+                <td class="px-4 py-2">{{ r.bom.finished_item.name }}</td>
+                <td class="px-4 py-2 text-right">{{ r.actual_output|int }} / {{ r.expected_output|int }}</td>
+                <td class="px-4 py-2 text-right font-semibold {{ 'text-red-600' if r.yield_flagged else 'text-emerald-700' }}">
+                    {{ r.yield_variance_pct }}% {% if r.yield_flagged %}⚠{% endif %}
+                </td>
+                <td class="px-4 py-2 text-right">₹{{ r.material_cost }}</td>
+                <td class="px-4 py-2 text-right">₹{{ r.labour_cost }}</td>
+                <td class="px-4 py-2 text-right">₹{{ r.overhead_cost }}</td>
+                <td class="px-4 py-2 text-right font-bold text-blue-800">₹{{ r.cost_per_packet }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="px-4 py-4 text-center text-slate-400">No production runs yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 4. Stock Ledger (Append-Only Traceability) -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
+    <div class="px-5 py-3 border-b bg-slate-50 font-semibold">Append-Only Stock Ledger (Latest 100 Movements)</div>
+    <table class="w-full text-xs text-left">
+        <thead class="bg-slate-100 text-slate-600 uppercase">
+            <tr>
+                <th class="px-4 py-2">ID</th>
+                <th class="px-4 py-2">Item</th>
+                <th class="px-4 py-2">Movement</th>
+                <th class="px-4 py-2 text-right">Qty Change</th>
+                <th class="px-4 py-2 text-right">Balance After</th>
+                <th class="px-4 py-2 text-right">Unit Cost</th>
+                <th class="px-4 py-2">Source Doc</th>
+                <th class="px-4 py-2">Notes</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for row in ledger_entries %}
+            <tr>
+                <td class="px-4 py-2 text-slate-500">#{{ row.id }}</td>
+                <td class="px-4 py-2 font-medium">{{ row.item.name }}</td>
+                <td class="px-4 py-2"><span class="px-2 py-0.5 rounded bg-slate-100">{{ row.movement_type }}</span></td>
+                <td class="px-4 py-2 text-right font-semibold {{ 'text-emerald-700' if row.qty_change > 0 else 'text-red-600' }}">
+                    {{ '+' if row.qty_change > 0 else '' }}{{ row.qty_change }}
+                </td>
+                <td class="px-4 py-2 text-right font-bold">{{ row.balance_after }}</td>
+                <td class="px-4 py-2 text-right">₹{{ row.unit_cost }}</td>
+                <td class="px-4 py-2">{{ row.source_type }}{% if row.source_id %} #{{ row.source_id }}{% endif %}</td>
+                <td class="px-4 py-2 text-slate-500">{{ row.notes or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 5. Audit Log -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+    <div class="px-5 py-3 border-b bg-slate-50 font-semibold">System Audit Trail (Latest 50 Actions)</div>
+    <table class="w-full text-xs text-left">
+        <thead class="bg-slate-100 text-slate-600 uppercase">
+            <tr>
+                <th class="px-4 py-2">Timestamp</th>
+                <th class="px-4 py-2">User</th>
+                <th class="px-4 py-2">Action</th>
+                <th class="px-4 py-2">Entity</th>
+                <th class="px-4 py-2">Details</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for log in audit_logs %}
+            <tr>
+                <td class="px-4 py-2 text-slate-500">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td class="px-4 py-2 font-medium">{{ user_map.get(log.user_id, log.user_id) }}</td>
+                <td class="px-4 py-2"><span class="px-2 py-0.5 rounded bg-slate-100 font-semibold">{{ log.action }}</span></td>
+                <td class="px-4 py-2">{{ log.entity_type }} #{{ log.entity_id }}</td>
+                <td class="px-4 py-2 text-slate-600">{{ log.details }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="px-4 py-4 text-center text-slate-400">No audit events recorded yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
